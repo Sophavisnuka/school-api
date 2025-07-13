@@ -1,11 +1,172 @@
 import db from '../models/index.js';
-
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 /**
  * @swagger
  * tags:
  *   - name: Teachers
  *     description: Teacher management
  */
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Teacher:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: integer
+ *         name:
+ *           type: string
+ *         email:
+ *           type: string
+ *         department:
+ *           type: string
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
+ */
+/**
+ * @swagger
+ * /teachers/register:
+ *   post:
+ *     summary: Register a new teacher
+ *     tags: [Teachers]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, department, email, password]
+ *             properties:
+ *               name:
+ *                 type: string
+ *               department:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Teacher registered successfully
+ *       400:
+ *         description: Missing required fields
+ *       409:
+ *         description: Teacher already exists
+ *       500:
+ *         description: Server error
+ */
+export const registerTeacher = async (req, res) => {
+    const { name, department, email, password } = req.body;
+
+    if (!name || !department || !email || !password) {
+        return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+    try {
+        const query = await db.Teacher.findOne({
+            where: { name: name, department: department, email: email },
+            attributes: ['id']
+        });
+        if (query) {
+            return res.status(409).json({ success: false, message: 'Teacher already exists' });
+        }
+        const hashedPassword = await bcrypt.hash(req.body.password, 10);
+        const newTeacher = await db.Teacher.create({
+            name: name,
+            department: department,
+            email: email,
+            password_hash: hashedPassword
+        });
+        return res.status(201).json({
+            success: true,
+            message: 'Teacher registered successfully',
+            data: {
+                id: newTeacher.id,
+                name: newTeacher.name,
+                department: newTeacher.department,
+                email: newTeacher.email
+            }
+        })
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+}
+/**
+ * @swagger
+ * /teachers/login:
+ *   post:
+ *     summary: Login as a teacher
+ *     tags: [Teachers]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 accessToken:
+ *                   type: string
+ *       400:
+ *         description: Missing required fields
+ *       401:
+ *         description: Invalid credentials
+ *       500:
+ *         description: Server error
+ */
+export const loginTeacher = async (req, res) => {
+    const { email, password, name } = req.body;
+    if (!email || !password) {
+        return res.status(400).json({ success: false, message: 'Missing required fields' });
+    } 
+    try {
+        const teacher = await db.Teacher.findOne({
+            where: { email: email},
+            attributes: ['id', 'email', 'password_hash']
+        })
+
+        if (!teacher) {
+            return res.status(401).json({ success: false, message: 'Password or email already exist' });
+        }
+
+        const isMatch = await bcrypt.compare(password, teacher.password_hash);
+        if (!isMatch) {
+            return res.status(401).json({ success: false, message: 'Invalid Password' });
+        }
+
+        const payload = { 
+            email: teacher.email, 
+            name: teacher.name,
+            id: teacher.id
+        }
+
+        const token = jwt.sign(payload, process.env.JWT_SECRET_TOKEN, {
+            expiresIn: '1h'
+        })
+
+        return res.json({ success: true, accessToken: token });
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
+    }
+    
+}
 
 /**
  * @swagger
